@@ -113,6 +113,13 @@ def calculate_losses(df, real_loss_percentage):
     """Verilen yüzdeye göre kayıp hacimlerini hesaplar."""
     df_calc = df.copy()
     
+    # Önce gerekli sütunların var olduğundan emin olalım
+    required_columns = ['TOPLAM_KACAK_M3']
+    for col in required_columns:
+        if col not in df_calc.columns:
+            st.error(f"Hesaplama için gerekli sütun bulunamadı: {col}")
+            return df_calc
+    
     # Gerçek ve Görünür Kayıp Yüzdeleri
     df_calc['TAHMINI_GERCEK_KAYIP_YUZDESI'] = real_loss_percentage * 100
     df_calc['TAHMINI_GORUNUR_KAYIP_YUZDESI'] = (1 - real_loss_percentage) * 100
@@ -231,7 +238,7 @@ if zone_file is not None:
                     df['TAHAKKUK_M3'] = pd.to_numeric(df['TAHAKKUK_M3'], errors='coerce')
                     df = df.dropna(subset=['GIRN_SU_M3', 'TAHAKKUK_M3'])
                     
-                    # Kaçak Hesaplaması
+                    # Kaçak Hesaplaması - TOPLAM_KACAK_M3 sütununu oluştur
                     df['TOPLAM_KACAK_M3'] = df['GIRN_SU_M3'] - df['TAHAKKUK_M3']
                     df['TOPLAM_KACAK_M3'] = df['TOPLAM_KACAK_M3'].clip(lower=0)
                     
@@ -240,6 +247,8 @@ if zone_file is not None:
                     df.loc[df['GIRN_SU_M3'] <= 0, 'TOPLAM_KACAK_ORANI'] = 0
                     
                     st.success(f"✅ Zone Analiz verileri başarıyla yüklendi: **{len(df)}** bölge kaydı.")
+                    st.sidebar.write("🔍 İşlenmiş Veri Önizleme:")
+                    st.sidebar.dataframe(df.head())
                     
                 else:
                     missing_cols = set(required_columns) - set(available_columns)
@@ -261,64 +270,96 @@ if zone_file is not None:
 
 if df is not None and not df.empty:
     
+    # Önce DataFrame'in durumunu kontrol et
+    st.write("📈 Veri Kontrolü:")
+    st.write(f"- Toplam kayıt sayısı: {len(df)}")
+    st.write(f"- Mevcut sütunlar: {list(df.columns)}")
+    st.write(f"- TOPLAM_KACAK_M3 sütunu mevcut mu: {'TOPLAM_KACAK_M3' in df.columns}")
+    
+    if 'TOPLAM_KACAK_M3' in df.columns:
+        st.write(f"- TOPLAM_KACAK_M3 değerleri: {df['TOPLAM_KACAK_M3'].tolist()}")
+    
     # Gerçek Kayıp Yüzdesini Hesapla
     real_loss_percent_decimal = calculate_real_loss_percentage(boru_yasi, malzeme_kalitesi, sicaklik_stresi, basin_profili)
     real_loss_percent_display = round(real_loss_percent_decimal * 100, 1)
 
     # Kayıp Hacimlerini Hesapla
-    df_results = calculate_losses(df, real_loss_percent_decimal)
-
-    st.header("✨ Simülasyon Sonuçları ve Kayıp Dağılımı")
-
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-        st.metric(
-            label="Gerçek Kayıp Riski Puanı (Max 20)",
-            value=f"{boru_yasi + malzeme_kalitesi + sicaklik_stresi + basin_profili}"
-        )
-
-    with col2:
-        st.metric(
-            label="Tahmini Boru Kaybı (Gerçek Kayıp) Oranı",
-            value=f"%{real_loss_percent_display}"
-        )
-
-    with col3:
-        st.metric(
-            label="Tahmini İdari Kayıp (Görünür Kayıp) Oranı",
-            value=f"%{100 - real_loss_percent_display:.1f}"
-        )
-
-    st.subheader("Bölge (Zone) Bazında Tahmini Kayıp Hacmi ($m^3$)")
-
-    # Sonuç tablosu
-    display_cols = ['ZONE_ADI', 'GIRN_SU_M3', 'TOPLAM_KACAK_M3', 'TOPLAM_KACAK_ORANI',
-                    'TAHMINI_BORU_KAYBI_M3', 'TAHMINI_SAYAC_KAYBI_M3']
-    display_df = df_results[display_cols].copy()
-    display_df.columns = ['Zone Adı', 'Giren Su (m³)', 'Toplam Kayıp (m³)', 'Toplam Kayıp (%)', 
-                          'Tahmini Boru Kaybı (m³)', 'Tahmini Sayaç/İdari Kayıp (m³)']
-    
-    # Sayısal formatlama
-    for col in ['Giren Su (m³)', 'Toplam Kayıp (m³)', 'Tahmini Boru Kaybı (m³)', 'Tahmini Sayaç/İdari Kayıp (m³)']:
-        display_df[col] = display_df[col].apply(lambda x: f"{x:,.0f}")
+    try:
+        df_results = calculate_losses(df, real_loss_percent_decimal)
         
-    display_df['Toplam Kayıp (%)'] = display_df['Toplam Kayıp (%)'].round(2).astype(str) + '%'
+        st.header("✨ Simülasyon Sonuçları ve Kayıp Dağılımı")
 
-    st.dataframe(display_df, use_container_width=True)
+        col1, col2, col3 = st.columns(3)
 
-    # Toplam Özet
-    total_real_loss = df_results['TAHMINI_BORU_KAYBI_M3'].sum()
-    total_apparent_loss = df_results['TAHMINI_SAYAC_KAYBI_M3'].sum()
+        with col1:
+            st.metric(
+                label="Gerçek Kayıp Riski Puanı (Max 20)",
+                value=f"{boru_yasi + malzeme_kalitesi + sicaklik_stresi + basin_profili}"
+            )
 
-    st.markdown("---")
-    st.subheader("🔍 Eylem Planı Vurgusu")
+        with col2:
+            st.metric(
+                label="Tahmini Boru Kaybı (Gerçek Kayıp) Oranı",
+                value=f"%{real_loss_percent_display}"
+            )
 
-    st.markdown(f"""
-    Bu simülasyona göre:
+        with col3:
+            st.metric(
+                label="Tahmini İdari Kayıp (Görünür Kayıp) Oranı",
+                value=f"%{100 - real_loss_percent_display:.1f}"
+            )
 
-    1.  **ACİL ALTYAPI İHTİYACI:** Toplam kayıp olan **{df_results['TOPLAM_KACAK_M3'].sum():,} m³'ün** **%{real_loss_percent_display}**'ü, yani **{total_real_loss:,} m³**, boru sızıntıları olarak tahmin edilmektedir.
-    2.  **İDARİ MÜDAHALE İHTİYACI:** Geriye kalan **%{100 - real_loss_percent_display:.1f}**'ü, yani **{total_apparent_loss:,} m³**, sayaç hataları ve idari kayıplardan kaynaklanmaktadır.
-    """)
+        st.subheader("Bölge (Zone) Bazında Tahmini Kayıp Hacmi ($m^3$)")
+
+        # Sonuç tablosu
+        display_cols = ['ZONE_ADI', 'GIRN_SU_M3', 'TOPLAM_KACAK_M3', 'TOPLAM_KACAK_ORANI',
+                        'TAHMINI_BORU_KAYBI_M3', 'TAHMINI_SAYAC_KAYBI_M3']
+        
+        # Sadece mevcut sütunları kullan
+        available_display_cols = [col for col in display_cols if col in df_results.columns]
+        display_df = df_results[available_display_cols].copy()
+        
+        # Sütun isimlerini Türkçe'ye çevir
+        column_names_map = {
+            'ZONE_ADI': 'Zone Adı',
+            'GIRN_SU_M3': 'Giren Su (m³)',
+            'TOPLAM_KACAK_M3': 'Toplam Kayıp (m³)',
+            'TOPLAM_KACAK_ORANI': 'Toplam Kayıp (%)',
+            'TAHMINI_BORU_KAYBI_M3': 'Tahmini Boru Kaybı (m³)',
+            'TAHMINI_SAYAC_KAYBI_M3': 'Tahmini Sayaç/İdari Kayıp (m³)'
+        }
+        
+        display_df.columns = [column_names_map.get(col, col) for col in display_df.columns]
+        
+        # Sayısal formatlama
+        numeric_columns = ['Giren Su (m³)', 'Toplam Kayıp (m³)', 'Tahmini Boru Kaybı (m³)', 'Tahmini Sayaç/İdari Kayıp (m³)']
+        for col in numeric_columns:
+            if col in display_df.columns:
+                display_df[col] = display_df[col].apply(lambda x: f"{x:,.0f}")
+        
+        if 'Toplam Kayıp (%)' in display_df.columns:
+            display_df['Toplam Kayıp (%)'] = display_df['Toplam Kayıp (%)'].round(2).astype(str) + '%'
+
+        st.dataframe(display_df, use_container_width=True)
+
+        # Toplam Özet
+        if 'TAHMINI_BORU_KAYBI_M3' in df_results.columns and 'TAHMINI_SAYAC_KAYBI_M3' in df_results.columns:
+            total_real_loss = df_results['TAHMINI_BORU_KAYBI_M3'].sum()
+            total_apparent_loss = df_results['TAHMINI_SAYAC_KAYBI_M3'].sum()
+
+            st.markdown("---")
+            st.subheader("🔍 Eylem Planı Vurgusu")
+
+            st.markdown(f"""
+            Bu simülasyona göre:
+
+            1.  **ACİL ALTYAPI İHTİYACI:** Toplam kayıp olan **{df_results['TOPLAM_KACAK_M3'].sum():,} m³'ün** **%{real_loss_percent_display}**'ü, yani **{total_real_loss:,} m³**, boru sızıntıları olarak tahmin edilmektedir.
+            2.  **İDARİ MÜDAHALE İHTİYACI:** Geriye kalan **%{100 - real_loss_percent_display:.1f}**'ü, yani **{total_apparent_loss:,} m³**, sayaç hataları ve idari kayıplardan kaynaklanmaktadır.
+            """)
+        
+    except Exception as e:
+        st.error(f"Hesaplama hatası: {str(e)}")
+        st.error("Lütfen veri formatını kontrol edin.")
+
 else:
     st.info("Lütfen sol kenar çubuğundan Zone Analiz dosyanızı yükleyerek simülasyonu başlatın.")
