@@ -72,18 +72,18 @@ def find_and_rename_columns_revised(df_raw):
     for col in df_raw.columns:
         col_str = str(col).upper().strip()
         
-        # 1. ZONE_ADI - Daha esnek eşleştirme
-        if any(keyword in col_str for keyword in ['KARNE NO VE ADI', 'KARNE', 'ZONE', 'BÖLGE', 'ADI']):
+        # 1. ZONE_ADI - Sadece bir kez eşleştir
+        if 'ZONE_ADI' not in found_columns and any(keyword in col_str for keyword in ['KARNE NO VE ADI', 'KARNE', 'ZONE', 'BÖLGE', 'ADI']):
             column_mapping[col] = 'ZONE_ADI'
             found_columns.append('ZONE_ADI')
         
-        # 2. GIRN_SU_M3 - VERİLEN SU MİKTARI M3 sütunu
-        elif any(keyword in col_str for keyword in ['VERİLEN SU MİKTARI M3', 'VERİLEN', 'GİREN', 'GIRN']):
+        # 2. GIRN_SU_M3 - Sadece bir kez eşleştir
+        elif 'GIRN_SU_M3' not in found_columns and any(keyword in col_str for keyword in ['VERİLEN SU MİKTARI M3', 'VERİLEN', 'GİREN', 'GIRN']):
             column_mapping[col] = 'GIRN_SU_M3'
             found_columns.append('GIRN_SU_M3')
         
-        # 3. TAHAKKUK_M3 - TAHAKKUK M3 sütunu (doğru yazım)
-        elif any(keyword in col_str for keyword in ['TAHAKKUK M3', 'TAHAKKUK', 'ÖLÇÜLEN']):
+        # 3. TAHAKKUK_M3 - Sadece bir kez eşleştir
+        elif 'TAHAKKUK_M3' not in found_columns and any(keyword in col_str for keyword in ['TAHAKKUK M3', 'TAHAKKUK', 'ÖLÇÜLEN']):
             column_mapping[col] = 'TAHAKKUK_M3'
             found_columns.append('TAHAKKUK_M3')
     
@@ -218,8 +218,9 @@ if zone_file is not None:
             column_mapping = find_and_rename_columns_revised(df_raw)
             
             if column_mapping:
-                # DataFrame'i hazırla
-                df = df_raw.rename(columns=column_mapping)
+                # DataFrame'i hazırla - sadece eşleştirilmiş sütunları al
+                df = df_raw[list(column_mapping.keys())].copy()
+                df = df.rename(columns=column_mapping)
                 
                 # Gerekli sütunları kontrol et
                 required_columns = ['ZONE_ADI', 'GIRN_SU_M3', 'TAHAKKUK_M3']
@@ -228,8 +229,6 @@ if zone_file is not None:
                 st.sidebar.write("🔄 Kullanılabilir Sütunlar:", available_columns)
                 
                 if len(available_columns) == 3:
-                    df = df[available_columns].copy()
-                    
                     # TOPLAM satırlarını ve eksik ZONE_ADI olanları temizle
                     df = df.dropna(subset=['ZONE_ADI'])
                     df = df[~df['ZONE_ADI'].astype(str).str.contains('TOPLAM|TOTAL|GENEL', na=False, case=False)]
@@ -279,14 +278,6 @@ if df is not None and not df.empty:
     
     if 'TOPLAM_KACAK_M3' in df.columns:
         st.write(f"- TOPLAM_KACAK_M3 değerleri: {df['TOPLAM_KACAK_M3'].tolist()}")
-    
-    # Eğer TOPLAM_KACAK_M3 sütunu yoksa, manuel olarak oluştur
-    if 'TOPLAM_KACAK_M3' not in df.columns and 'GIRN_SU_M3' in df.columns and 'TAHAKKUK_M3' in df.columns:
-        st.warning("TOPLAM_KACAK_M3 sütunu otomatik oluşturulamadı, manuel olarak oluşturuluyor...")
-        df['TOPLAM_KACAK_M3'] = df['GIRN_SU_M3'] - df['TAHAKKUK_M3']
-        df['TOPLAM_KACAK_M3'] = df['TOPLAM_KACAK_M3'].clip(lower=0)
-        df['TOPLAM_KACAK_ORANI'] = (df['TOPLAM_KACAK_M3'] / df['GIRN_SU_M3']) * 100
-        df.loc[df['GIRN_SU_M3'] <= 0, 'TOPLAM_KACAK_ORANI'] = 0
     
     # Gerçek Kayıp Yüzdesini Hesapla
     real_loss_percent_decimal = calculate_real_loss_percentage(boru_yasi, malzeme_kalitesi, sicaklik_stresi, basin_profili)
