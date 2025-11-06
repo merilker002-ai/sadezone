@@ -218,25 +218,27 @@ if zone_file is not None:
                 
                 # TOPLAM satırlarını ve eksik ZONE_ADI olanları temizle
                 df = df.dropna(subset=['ZONE_ADI'])
-                df = df[~df['ZONE_ADI'].astype(str).str.contains('TOPLAM|TOTAL|GENEL', na=False)]
+                df = df[~df['ZONE_ADI'].astype(str).str.contains('TOPLAM|TOTAL|GENEL', na=False, case=False)]
                 
                 # Sayısal dönüşüm ve temizlik
                 df['GIRN_SU_M3'] = pd.to_numeric(df['GIRN_SU_M3'], errors='coerce')
                 df['TAHAKKUK_M3'] = pd.to_numeric(df['TAHAKKUK_M3'], errors='coerce')
                 df = df.dropna(subset=['GIRN_SU_M3', 'TAHAKKUK_M3'])
                 
-                # Kaçak Hesaplaması
+                # Kaçak Hesaplaması - np.where yerine doğrudan pandas operasyonları kullan
                 df['TOPLAM_KACAK_M3'] = df['GIRN_SU_M3'] - df['TAHAKKUK_M3']
-                df['TOPLAM_KACAK_M3'] = df['TOPLAM_KACAK_M3'].apply(lambda x: max(0, x)) # Negatif kaçakları 0 yap
+                df['TOPLAM_KACAK_M3'] = df['TOPLAM_KACAK_M3'].clip(lower=0) # Negatif kaçakları 0 yap
                 
-                df['TOPLAM_KACAK_ORANI'] = np.where(df['GIRN_SU_M3'] > 0, 
-                                                (df['TOPLAM_KACAK_M3'] / df['GIRN_SU_M3']) * 100, 0)
+                # Kayıp oranı hesaplama - np.where yerine doğrudan pandas
+                df['TOPLAM_KACAK_ORANI'] = (df['TOPLAM_KACAK_M3'] / df['GIRN_SU_M3']) * 100
+                df.loc[df['GIRN_SU_M3'] <= 0, 'TOPLAM_KACAK_ORANI'] = 0
                                                 
                 st.success(f"✅ Zone Analiz verileri başarıyla yüklendi ve işlendi: **{len(df)}** bölge kaydı.")
 
             except Exception as e:
                 df = None
                 st.error(f"Veri işleme ve hesaplama hatası: {e}")
+                st.error(f"Hata detayı: {type(e).__name__}")
         else:
             st.error("Zone dosyasında gerekli sütunlar (ZONE, VERİLEN SU M3, TAHAKKUK M3) bulunamadı. Lütfen dosya içeriğini kontrol edin.")
             st.dataframe(df_raw.head())
@@ -284,7 +286,7 @@ if df is not None and not df.empty:
     # Sonuç tablosu (gösterilecek sütunlar)
     display_cols = ['ZONE_ADI', 'GIRN_SU_M3', 'TOPLAM_KACAK_M3', 'TOPLAM_KACAK_ORANI',
                     'TAHMINI_BORU_KAYBI_M3', 'TAHMINI_SAYAC_KAYBI_M3']
-    display_df = df_results[display_cols]
+    display_df = df_results[display_cols].copy()
     display_df.columns = ['Zone Adı', 'Giren Su (m³)', 'Toplam Kayıp (m³)', 'Toplam Kayıp (%)', 
                           'Tahmini Boru Kaybı (m³)', 'Tahmini Sayaç/İdari Kayıp (m³)']
     
