@@ -82,7 +82,7 @@ def find_and_rename_columns_revised(df_raw):
             column_mapping[col] = 'GIRN_SU_M3'
             found_columns.append('GIRN_SU_M3')
         
-        # 3. TAHAKKUK_M3 - TAHAKKUK M3 sütunu
+        # 3. TAHAKKUK_M3 - TAHAKKUK M3 sütunu (doğru yazım)
         elif any(keyword in col_str for keyword in ['TAHAKKUK M3', 'TAHAKKUK', 'ÖLÇÜLEN']):
             column_mapping[col] = 'TAHAKKUK_M3'
             found_columns.append('TAHAKKUK_M3')
@@ -118,6 +118,7 @@ def calculate_losses(df, real_loss_percentage):
     for col in required_columns:
         if col not in df_calc.columns:
             st.error(f"Hesaplama için gerekli sütun bulunamadı: {col}")
+            st.error(f"Mevcut sütunlar: {list(df_calc.columns)}")
             return df_calc
     
     # Gerçek ve Görünür Kayıp Yüzdeleri
@@ -278,6 +279,14 @@ if df is not None and not df.empty:
     
     if 'TOPLAM_KACAK_M3' in df.columns:
         st.write(f"- TOPLAM_KACAK_M3 değerleri: {df['TOPLAM_KACAK_M3'].tolist()}")
+    
+    # Eğer TOPLAM_KACAK_M3 sütunu yoksa, manuel olarak oluştur
+    if 'TOPLAM_KACAK_M3' not in df.columns and 'GIRN_SU_M3' in df.columns and 'TAHAKKUK_M3' in df.columns:
+        st.warning("TOPLAM_KACAK_M3 sütunu otomatik oluşturulamadı, manuel olarak oluşturuluyor...")
+        df['TOPLAM_KACAK_M3'] = df['GIRN_SU_M3'] - df['TAHAKKUK_M3']
+        df['TOPLAM_KACAK_M3'] = df['TOPLAM_KACAK_M3'].clip(lower=0)
+        df['TOPLAM_KACAK_ORANI'] = (df['TOPLAM_KACAK_M3'] / df['GIRN_SU_M3']) * 100
+        df.loc[df['GIRN_SU_M3'] <= 0, 'TOPLAM_KACAK_ORANI'] = 0
     
     # Gerçek Kayıp Yüzdesini Hesapla
     real_loss_percent_decimal = calculate_real_loss_percentage(boru_yasi, malzeme_kalitesi, sicaklik_stresi, basin_profili)
